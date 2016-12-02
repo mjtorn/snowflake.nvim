@@ -3,6 +3,11 @@
 A [Neovim](https://neovim.io/) plugin written in [Python 3](https://docs.python.org/3/) for writing in a [Snowflake](http://www.advancedfictionwriting.com/articles/snowflake-method/) fashion. Licensed under WTFPL2, see
 LICENSE for details.
 
+*Totally proof-of-concept at this stage!*
+
+Requires [the Python client](https://github.com/neovim/python-client) version 0.1.12, which is not released
+at the time of writing this, so you must install `master HEAD`.
+
 ## How?
 
 ### Snowflake
@@ -47,6 +52,14 @@ it for this purpose.
 I use Python 3 almost exclusively as my programming language of choice, therefore why not go with it?
 
 As a bonus you can use whatever other plugins you want to for eg. version control.
+
+## TODO
+
+  * Enforce some kind of structure wrt title and description in scenes
+  * Implement some kind of character editing
+  * Figure out how to deal with chapters
+  * Different builds (with comments, without comments, and so on)
+  * Session log with time spent in insert mode, word count deltas etc
 
 ## Contribution?
 
