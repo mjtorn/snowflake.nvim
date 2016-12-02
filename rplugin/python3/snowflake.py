@@ -192,6 +192,7 @@ class SceneManager(Manager):
         if os.path.exists(SNOWFLAKE_SCENES_YAML):
             with open(SNOWFLAKE_SCENES_YAML, 'rb') as f:
                 self.scenes = yaml.load(f.read())
+                self.refresh_scenes()
         else:
             self.scenes = []
 
@@ -229,6 +230,52 @@ class SceneManager(Manager):
 
         if retval != 0:
             raise RuntimeError('Command failed')
+
+    def refresh_scenes(self):
+        """When editing the title or description of a file, the
+        scenes list metadata should be updated as well.
+        To ensure this can happen, the fields must be in the files.
+        """
+
+        for scene in self.scenes:
+            self.refresh_scene(scene, save=False)
+
+        self.save()
+
+    def refresh_scene(self, scene, save=True):
+        """Verify internal format of a scene. If it needs to be changed,
+        always write it to disk.
+        By default, save the `self.scenes` yaml.
+        """
+
+        changed = False
+
+        filename = scene['filename']
+        with open(filename, 'rb') as f:
+            lines = f.readlines()
+            top_lines = lines[:2]
+
+        comment_count = len([l for l in top_lines if l.startswith(b'.. ')])
+
+        # Magic 2: one for title, one for description
+        to_add = 2 - comment_count
+        for i in range(to_add):
+            lines.insert(i, b'.. \n')
+            changed = True
+
+        if lines[2] != b'\n':
+            lines.insert(2, b'\n')
+            changed = True
+
+        scene['title'] = lines[0].replace(b'.. ', b'').strip().decode('utf-8')
+        scene['descr'] = lines[1].replace(b'.. ', b'').strip().decode('utf-8')
+
+        if changed:
+            with open(filename, 'wb') as f:
+                f.write(b''.join(lines))
+
+        if save:
+            self.save()
 
     def add_at(self, idx, nvim):
         """Add an entry at given list index (0-indexed)
@@ -492,6 +539,7 @@ class SnowflakePlugin(object):
 
     @neovim.autocmd('BufWritePost', pattern='*.rst', eval='expand("<afile>")', sync=True)
     def on_bufwritepost_updatemenu(self, filename):
+        self.managers['scene'].refresh_scenes()
         self.update_menu()
 
     def load_snowflake(self):

@@ -55,11 +55,11 @@ As a bonus you can use whatever other plugins you want to for eg. version contro
 
 ## TODO
 
-  * Enforce some kind of structure wrt title and description in scenes
   * Implement some kind of character editing
   * Figure out how to deal with chapters
   * Different builds (with comments, without comments, and so on)
   * Session log with time spent in insert mode, word count deltas etc
+  * Fix what happens when you remove the title/description in a scene
 
 ## Contribution?
 
