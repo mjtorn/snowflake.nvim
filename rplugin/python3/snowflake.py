@@ -2,15 +2,18 @@ import abc
 import neovim
 import os
 import subprocess
+import uuid
 import yaml
 
 from collections import OrderedDict
 from collections import namedtuple
 
-MenuStat = namedtuple('MenuStat', ('manager', 'line', 'col'))
+MenuStat = namedtuple('MenuStat', ('manager', 'offset', 'line', 'col'))
 
 SNOWFLAKE_YAML = 'snowflake.yaml'
 SNOWFLAKE_RST_DIR = 'snowflake-files'
+SNOWFLAKE_SCENES_YAML = 'snowflake-scenes.yaml'
+SNOWFLAKE_SCENES_DIR = 'snowflake-scenes'
 SNOWFLAKE_OUT_DIR = 'out'
 SNOWFLAKE_ONE_DOCS_FILE = 'one-docs.rst'
 
@@ -72,6 +75,9 @@ class SnowflakeManager(Manager):
 
         if not os.path.exists(SNOWFLAKE_RST_DIR):
             os.mkdir(SNOWFLAKE_RST_DIR)
+
+        if not os.path.exists(SNOWFLAKE_SCENES_DIR):
+            os.mkdir(SNOWFLAKE_SCENES_DIR)
 
         for key, snowflake_file in self.snowflake_files.items():
             if not os.path.exists(snowflake_file):
@@ -183,7 +189,11 @@ class SceneManager(Manager):
         """Set initial data
         """
 
-        self.scenes = []
+        if os.path.exists(SNOWFLAKE_SCENES_YAML):
+            with open(SNOWFLAKE_SCENES_YAML, 'rb') as f:
+                self.scenes = yaml.load(f.read())
+        else:
+            self.scenes = []
 
     def contribute_to_menu(self, buf):
         """Affect what is shown in the menu in `buf`
@@ -193,6 +203,90 @@ class SceneManager(Manager):
         title = '{}{}'.format(prefix, self.title)
 
         buf.append(title)
+
+        if self.expanded:
+            for scene in self.scenes:
+                buf.append('  {}'.format(scene['title']))
+                buf.append('   {}'.format(scene['descr']))
+
+    def build(self, snowflake):
+        """Compile the one-docs to one mega doc
+        """
+
+        out_filename = '{}.rst'.format(snowflake['info']['name'])
+        out_path = os.path.join(SNOWFLAKE_OUT_DIR, out_filename)
+        with open(out_path, 'wb') as out_f:
+            for scene in self.scenes:
+                in_filename = scene['filename']
+                with open(in_filename, 'rb') as in_f:
+                    out_f.write(in_f.read())
+                    out_f.write(b'\n')
+
+        cmd, suffix = CONVERSION
+        converted_path = out_path.rsplit('.', 1)[0] + suffix
+
+        retval = subprocess.call([cmd, out_path, converted_path])
+
+        if retval != 0:
+            raise RuntimeError('Command failed')
+
+    def add_at(self, idx, nvim):
+        """Add an entry at given list index (0-indexed)
+        """
+
+        fname = '{}.rst'.format(uuid.uuid4())
+        fname = os.path.join(SNOWFLAKE_SCENES_DIR, fname)
+
+        title = nvim.funcs.input('Scene title> ')
+        descr = nvim.funcs.input('Scene description> ')
+        scene = OrderedDict((
+            ('title', title),
+            ('descr', descr),
+            ('filename', fname),
+        ))
+
+        if not self.scenes:
+            assert idx == 0
+        else:
+            assert idx >= 0
+
+        self.scenes.insert(idx, scene)
+
+        with open(fname, 'wb') as f:
+            f.writelines((
+                '.. {}\n'.format(scene['title']).encode('utf-8'),
+                '.. {}\n'.format(scene['descr']).encode('utf-8'),
+                b'\n',
+            ))
+
+        self.save()
+
+    def save(self):
+        """Flush the thing to disk
+        """
+
+        with open(SNOWFLAKE_SCENES_YAML, 'wb') as f:
+            f.write(yaml.dump(self.scenes).encode('utf-8'))
+
+    def move(self, from_idx, to_idx):
+        """Move a list entry
+        """
+
+        assert from_idx >= 0
+        assert to_idx >= 0
+
+        self.scenes.insert(to_idx, self.scenes.pop(from_idx))
+
+        self.save()
+
+    def get_file_by_idx(self, idx):
+        """Look at the scene list and return the relevant file name
+        """
+
+        if self.scenes:
+            scene = self.scenes[idx]
+
+            return scene['filename']
 
 
 @neovim.plugin
@@ -288,6 +382,114 @@ class SnowflakePlugin(object):
             menu_stat.manager.set_layout(self.nvim)
             self.update_menu()
 
+    @neovim.function('SnowflakePrependScene', sync=True)
+    def prepend_scene(self, args):
+        """Add a scene above cursor
+        """
+
+        menu_stat = self.menu_stat()
+
+        # Be lazy and deny prepending in an empty list, use append instead
+        if menu_stat.offset == 0:
+            return
+
+        idx = menu_stat.offset - 1 if menu_stat.offset > 0 else menu_stat.offset
+
+        idx //= 2
+
+        if callable(getattr(menu_stat.manager, 'add_at', None)):
+            menu_stat.manager.add_at(idx, self.nvim)
+
+            if not menu_stat.manager.expanded:
+                menu_stat.manager.expanded = True
+
+            self.update_menu(menu_stat)
+
+    @neovim.function('SnowflakeAppendScene', sync=True)
+    def append_scene(self, args):
+        """Add a scene
+        """
+
+        menu_stat = self.menu_stat()
+
+        if menu_stat.offset > 0 and menu_stat.offset % 2 == 1:
+            idx = menu_stat.offset + 1
+        else:
+            idx = menu_stat.offset
+
+        idx //= 2
+
+        if callable(getattr(menu_stat.manager, 'add_at', None)):
+            menu_stat.manager.add_at(idx, self.nvim)
+
+            if not menu_stat.manager.expanded:
+                menu_stat.manager.expanded = True
+
+            self.update_menu(menu_stat)
+
+    @neovim.function('SnowflakeMoveScene', sync=True)
+    def move_scene(self, args):
+        """Move a scene above cursor
+        """
+
+        assert len(args) == 1
+        direction = args[0]
+        assert direction in (-1, +1)
+
+        menu_stat = self.menu_stat()
+
+        # Do nothing with a list too small, or a bad position
+        if menu_stat.offset < 3 and direction == -1:
+            return
+
+        idx = menu_stat.offset - 1 if menu_stat.offset > 0 else menu_stat.offset
+
+        idx //= 2
+
+        if callable(getattr(menu_stat.manager, 'move', None)):
+            dst_idx = idx + direction
+            menu_stat.manager.move(idx, idx + direction)
+
+            # Forge a new MenuStat to track the cursor
+            self.update_menu(MenuStat(menu_stat.manager, 1 + (2 * dst_idx), menu_stat.line, menu_stat.col))
+
+    @neovim.function('SnowflakeEditScene', sync=True)
+    def edit_scene(self, args):
+        """Open a scene file for editing
+        """
+
+        menu_stat = self.menu_stat()
+
+        self.clean_windows()
+        menu_stat.manager.set_layout(self.nvim)
+        self.update_menu()
+
+        # Do some trickery to get from vim's line numbers
+        # for titles and descriptions to the actual structure
+        if menu_stat.offset == 0:
+            # Don't allow editing when there's nothing to edit
+            return
+        else:
+            idx = menu_stat.offset - 1
+
+        idx //= 2
+
+        for window in self.nvim.windows:
+            if window.handle != self.menu_win_handle:
+                break
+        else:
+            window = None
+
+        if window is not None:
+            # Pass as a dummy value to ensure the correct layout here
+            # self.set_layout(None)
+
+            if callable(getattr(menu_stat.manager, 'get_file_by_idx', None)):
+                fname = menu_stat.manager.get_file_by_idx(idx)
+                if fname is not None:
+                    self.nvim.command('{} wincmd w'.format(window.number))
+                    self.nvim.command('edit {}'.format(fname))
+
     @neovim.autocmd('BufWritePost', pattern='*.rst', eval='expand("<afile>")', sync=True)
     def on_bufwritepost_updatemenu(self, filename):
         self.update_menu()
@@ -348,7 +550,9 @@ class SnowflakePlugin(object):
                         menu_line = i + 1
                         break
 
-        return MenuStat(in_manager, menu_line, curr_col)
+        offset = curr_line - menu_line
+
+        return MenuStat(in_manager, offset, menu_line, curr_col)
 
     def clean_windows(self):
         """Reap all windows, but leave menu and another one so
@@ -379,6 +583,11 @@ class SnowflakePlugin(object):
         # Want to deal with the tree
         self.nvim.command('nmap <silent><buffer> <Space> :call SnowflakeToggleMenu()<CR>')
         self.nvim.command('nmap <silent><buffer> L :call SnowflakeSetLayout()<CR>')
+        self.nvim.command('nmap <silent><buffer> A :call SnowflakePrependScene()<CR>')
+        self.nvim.command('nmap <silent><buffer> a :call SnowflakeAppendScene()<CR>')
+        self.nvim.command('nmap <silent><buffer> o :call SnowflakeEditScene()<CR>')
+        self.nvim.command('nmap <silent><buffer> K :call SnowflakeMoveScene(-1)<CR>')
+        self.nvim.command('nmap <silent><buffer> J :call SnowflakeMoveScene(+1)<CR>')
 
         self.nvim.windows[win_number - 1].buffer.options['buflisted'] = False
 

@@ -27,9 +27,13 @@ Currently only ODT is supported (beside RST), so make sure `python-docutils` is 
 
 ### Menu
 
-`<Space>` opens and collapses the current menu item.
-
-`L` on a menu item sets the layout.
+  * `<Space>` opens and collapses the current menu item.
+  * `L` on a menu item sets the layout.
+  * `a` appends a scene after the cursor line in the `SCENES` menu.
+  * `A` prepeds a scene before the cursor line in the `SCENES` menu.
+  * `o` opens a scene for editing.
+  * `J` moves a scene down in the list
+  * `K` moves a scene up in the list
 
 ## Why?
 
