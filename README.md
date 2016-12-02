@@ -5,8 +5,8 @@ LICENSE for details.
 
 *Totally proof-of-concept at this stage!*
 
-Requires [the Python client](https://github.com/neovim/python-client) version 0.1.12, which is not released
-at the time of writing this, so you must install `master HEAD`.
+Requires [the Python client](https://github.com/neovim/python-client) version 0.1.12 in a virtualenv
+or your system. `python-docutils` is required for ODT, see below.
 
 ## How?
 
