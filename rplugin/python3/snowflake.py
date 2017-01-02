@@ -69,21 +69,6 @@ class SnowflakeManager(Manager):
         ('synopsis', '.. You may also write a longer synopsis instead of this comment.'),
     ))
 
-    def __init__(self):
-        """Validate on startup
-        """
-
-        if not os.path.exists(SNOWFLAKE_RST_DIR):
-            os.mkdir(SNOWFLAKE_RST_DIR)
-
-        if not os.path.exists(SNOWFLAKE_SCENES_DIR):
-            os.mkdir(SNOWFLAKE_SCENES_DIR)
-
-        for key, snowflake_file in self.snowflake_files.items():
-            if not os.path.exists(snowflake_file):
-                with open(snowflake_file, 'wb') as f:
-                    f.write(self.snowflake_defaults[key].encode('utf-8'))
-
     def contribute_to_menu(self, buf):
         """Affect what is shown in the menu in `buf`
         """
@@ -378,6 +363,17 @@ class SnowflakePlugin(object):
     def init_snowflake(self, args, range):
         """Set the current environment up for working
         """
+
+        if not os.path.exists(SNOWFLAKE_RST_DIR):
+            os.mkdir(SNOWFLAKE_RST_DIR)
+
+        if not os.path.exists(SNOWFLAKE_SCENES_DIR):
+            os.mkdir(SNOWFLAKE_SCENES_DIR)
+
+        for key, snowflake_file in self.managers['snowflake'].snowflake_files.items():
+            if not os.path.exists(snowflake_file):
+                with open(snowflake_file, 'wb') as f:
+                    f.write(self.managers['snowflake'].snowflake_defaults[key].encode('utf-8'))
 
         # Simple check to see if we're inited already
         if self.menu_win_handle is not None:
