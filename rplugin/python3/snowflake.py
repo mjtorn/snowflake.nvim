@@ -359,6 +359,9 @@ class SnowflakePlugin(object):
         # I use MiniBufExplorer, but not here
         self.nvim.vars['miniBufExplAutoStart'] = 0
 
+        # Initial menu position
+        self.nvim.vars['menu_pos'] = [0, 1, 1, 0]
+
     @neovim.command('Snowflake', range='', nargs='*')
     def init_snowflake(self, args, range):
         """Set the current environment up for working
@@ -538,6 +541,33 @@ class SnowflakePlugin(object):
         self.managers['scene'].refresh_scenes()
         self.update_menu()
 
+    @neovim.autocmd('BufEnter', pattern='SnowflakeMenu', eval='expand("<afile>")', sync=True)
+    def enter_menu(self, filename):
+        self.nvim.funcs.setpos('.', self.nvim.vars['menu_pos'])
+        self.nvim.command('echom "enter menu {}"'.format(self.nvim.vars['menu_pos']))
+
+    @neovim.autocmd('BufLeave', pattern='SnowflakeMenu', eval='expand("<afile>")', sync=True)
+    def leave_menu(self, filename):
+        """BufLeave is allegedly called before leaving the buffer but actually it fucks everything
+        up, because getpos('.') will return the new buffer's position.
+        """
+
+        # # FIXME: Don't have time for this shit now, but have to set this in self
+        # win_number = self.nvim.funcs.win_id2win(self.menu_win_handle)
+        # # NERDTree looked a bit like we could move back and forth here, but of course not.
+        # new_win = self.nvim.funcs.winnr()
+
+        # self.nvim.command('{} wincmd w'.format(win_number))
+        # self.nvim.command('echom "return to {} for a while"'.format(win_number))
+
+        new_pos = self.nvim.funcs.getpos('.')
+        if new_pos != [0, 1, 1, 0]:
+            self.nvim.vars['menu_pos'] = new_pos
+        # self.nvim.command('echom "store {}"'.format(new_pos))
+
+        # self.nvim.command('{} wincmd w'.format(new_win))
+        # self.nvim.command('echom "to original window {}"'.format(new_win))
+
     def load_snowflake(self):
         """Load a Snowflake file
         """
@@ -569,17 +599,12 @@ class SnowflakePlugin(object):
 
         # Good thing this doesn't have to be web scale
 
-        win_number = self.nvim.funcs.win_id2win(self.menu_win_handle)
-
-        menuwin = self.nvim.windows[win_number - 1]
-        menubuf = menuwin.buffer
-
         curr_line = self.nvim.funcs.line('.')
         curr_col = self.nvim.funcs.col('.')
 
         in_manager = None
         menu_line = None
-        for i, line in enumerate(menubuf):
+        for i, line in enumerate(self.menubuf):
             if not line:
                 continue
 
@@ -624,6 +649,12 @@ class SnowflakePlugin(object):
         self.menu_win_handle = self.nvim.funcs.win_getid()
         win_number = self.nvim.funcs.win_id2win(self.menu_win_handle)
 
+        menuwin = self.nvim.windows[win_number - 1]
+        self.menubuf = menuwin.buffer
+
+        # Set a name for menu, but also make it 'nofile' later
+        self.nvim.command('edit SnowflakeMenu')
+
         # Want to deal with the tree
         self.nvim.command('nmap <silent><buffer> <Space> :call SnowflakeToggleMenu()<CR>')
         self.nvim.command('nmap <silent><buffer> L :call SnowflakeSetLayout()<CR>')
@@ -633,7 +664,9 @@ class SnowflakePlugin(object):
         self.nvim.command('nmap <silent><buffer> K :call SnowflakeMoveScene(-1)<CR>')
         self.nvim.command('nmap <silent><buffer> J :call SnowflakeMoveScene(+1)<CR>')
 
-        self.nvim.windows[win_number - 1].buffer.options['buflisted'] = False
+        self.menubuf.options['buflisted'] = False
+        self.menubuf.options['buftype'] = 'nofile'
+        self.menubuf.options['filetype'] = 'snowflakemenu'
 
     def update_menu(self, menu_stat=None):
         """Update the menu with whatever we're currently doing.
@@ -643,21 +676,21 @@ class SnowflakePlugin(object):
         win_number = self.nvim.funcs.win_id2win(self.menu_win_handle)
 
         menuwin = self.nvim.windows[win_number - 1]
-        menubuf = menuwin.buffer
+        self.menubuf = menuwin.buffer
 
-        menubuf.options['modifiable'] = True
+        self.menubuf.options['modifiable'] = True
 
-        menubuf[:] = ['']
-        menubuf[0] = 'MENU'
-        menubuf.append('====')
-        menubuf.append('')
+        self.menubuf[:] = ['']
+        self.menubuf[0] = 'MENU'
+        self.menubuf.append('====')
+        self.menubuf.append('')
 
         for manager in self.managers.values():
-            manager.contribute_to_menu(menubuf)
+            manager.contribute_to_menu(self.menubuf)
 
-        menubuf.options['modifiable'] = False
-        menubuf.options['buftype'] = 'nofile'
-        menubuf.options['bufhidden'] = 'hide'
+        self.menubuf.options['modifiable'] = False
+        self.menubuf.options['bufhidden'] = 'hide'
+        self.menubuf.options['buftype'] = 'nofile'
 
         menuwin.options['number'] = False
         menuwin.options['relativenumber'] = False
@@ -668,3 +701,4 @@ class SnowflakePlugin(object):
 
         if menu_stat is not None:
             self.nvim.funcs.cursor(menu_stat.line + menu_stat.offset, menu_stat.col)
+
