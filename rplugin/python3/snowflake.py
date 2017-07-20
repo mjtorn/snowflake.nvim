@@ -344,6 +344,8 @@ class SnowflakePlugin(object):
     ))
 
     def __init__(self, nvim):
+        self.inited = False
+
         self.nvim = nvim
         self.manager = self.managers['snowflake']
 
@@ -367,6 +369,10 @@ class SnowflakePlugin(object):
         """Set the current environment up for working
         """
 
+        # Do not init twice
+        if self.inited:
+            return
+
         if not os.path.exists(SNOWFLAKE_RST_DIR):
             os.mkdir(SNOWFLAKE_RST_DIR)
 
@@ -378,10 +384,6 @@ class SnowflakePlugin(object):
                 with open(snowflake_file, 'wb') as f:
                     f.write(self.managers['snowflake'].snowflake_defaults[key].encode('utf-8'))
 
-        # Simple check to see if we're inited already
-        if self.menu_win_handle is not None:
-            return
-
         if os.path.exists(SNOWFLAKE_YAML):
             self.load_snowflake()
 
@@ -391,6 +393,8 @@ class SnowflakePlugin(object):
         self.make_menu_pane()
         self.update_menu()
         self.manager.set_layout(self.nvim)
+
+        self.inited = True
 
     @neovim.command('SnowflakeBuild', nargs=0)
     def build_snowflake(self):
@@ -538,8 +542,13 @@ class SnowflakePlugin(object):
 
     @neovim.autocmd('BufWritePost', pattern='*.rst', eval='expand("<afile>")', sync=True)
     def on_bufwritepost_updatemenu(self, filename):
-        self.managers['scene'].refresh_scenes()
-        self.update_menu()
+        """Update menu and all that, but only if Snowflake has been inited. Otherwise this
+        will get called when saving RST files outside Snowflake, causing weirdness.
+        """
+
+        if self.inited:
+            self.managers['scene'].refresh_scenes()
+            self.update_menu()
 
     @neovim.autocmd('BufEnter', pattern='SnowflakeMenu', eval='expand("<afile>")', sync=True)
     def enter_menu(self, filename):
